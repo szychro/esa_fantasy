@@ -197,6 +197,8 @@ def parse_match_table(table, player: Dict[str, str], season: str) -> List[Dict[s
             "assists": text_cell("assists"),
             "shots": text_cell("shots"),
             "xg": text_cell("xg"),
+            'yellow_cards': text_cell("cards_yellow"),
+            'red_cards': text_cell("cards_red"),
             "gk_shots_against": text_cell("gk_shots_on_target_against"),
             "gk_goals_against": text_cell("gk_goals_against"),
             "gk_saves": text_cell("gk_saves"),

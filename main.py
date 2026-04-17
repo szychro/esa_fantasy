@@ -1,8 +1,59 @@
-from scrap import close_driver, get_players, get_match_logs, get_teams
+from pathlib import Path
+import sys
+
 import pandas as pd
+from scrap import SEASONS, close_driver, get_players, get_match_logs, get_teams
+
+
+OUTPUT_CSV = Path("ekstraklasa_players.csv")
+KEY_COLUMNS = ["player_id", "match_id"]
+
+
+def load_existing_data(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(path)
+    for column in KEY_COLUMNS + ["season"]:
+        if column not in df.columns:
+            df[column] = None
+    return df
+
+
+def merge_player_rows(existing_df: pd.DataFrame, new_rows: list[dict], refresh_seasons: list[str]) -> pd.DataFrame:
+    new_df = pd.DataFrame(new_rows)
+    if new_df.empty:
+        if existing_df.empty:
+            return new_df
+        return existing_df.copy()
+
+    if existing_df.empty:
+        combined = new_df
+    else:
+        preserved_df = existing_df[~existing_df["season"].isin(refresh_seasons)].copy()
+        existing_refresh_df = existing_df[existing_df["season"].isin(refresh_seasons)].copy()
+        combined = pd.concat([preserved_df, existing_refresh_df, new_df], ignore_index=True, sort=False)
+
+    combined = combined.sort_values(by=["season", "date", "player", "match_id"], na_position="last")
+    combined = combined.drop_duplicates(subset=KEY_COLUMNS, keep="last")
+    combined = combined.reset_index(drop=True)
+    return combined
+
+
+def parse_args() -> tuple[bool, list[str]]:
+    full_refresh = "--full-refresh" in sys.argv
+    if full_refresh or "--all-seasons" in sys.argv:
+        seasons = SEASONS
+    else:
+        seasons = [SEASONS[0]]
+    return full_refresh, seasons
+
 
 def main():
     all_data = []
+    full_refresh, seasons_to_scrape = parse_args()
+    refresh_scope = "full rebuild" if full_refresh else f"incremental refresh for {', '.join(seasons_to_scrape)}"
+
+    print(f"Mode: {refresh_scope}")
 
     print("Fetching teams...")
     teams = get_teams("https://fbref.com/en/comps/36/Ekstraklasa-Stats")
@@ -17,14 +68,20 @@ def main():
 
             for player_name, player in players.items():
                 print(f"\n  Player: {player_name}")
-                rows = get_match_logs(player)
+                rows = get_match_logs(player, seasons=seasons_to_scrape)
                 all_data.extend(rows)
     finally:
         close_driver()
 
-    df = pd.DataFrame(all_data)
-    df.to_csv("ekstraklasa_players.csv", index=False)
-    print(f"\n✅ Done. {len(df)} rows saved to ekstraklasa_players.csv")
+    if full_refresh:
+        df = pd.DataFrame(all_data)
+        df = df.drop_duplicates(subset=KEY_COLUMNS, keep="last").reset_index(drop=True)
+    else:
+        existing_df = load_existing_data(OUTPUT_CSV)
+        df = merge_player_rows(existing_df, all_data, seasons_to_scrape)
+
+    df.to_csv(OUTPUT_CSV, index=False)
+    print(f"\n✅ Done. {len(df)} rows saved to {OUTPUT_CSV}")
 
 if __name__ == "__main__":
     main()
