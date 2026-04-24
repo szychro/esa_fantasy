@@ -2,10 +2,11 @@ from pathlib import Path
 import sys
 
 import pandas as pd
-from scrap import SEASONS, close_driver, get_players, get_match_logs, get_teams
+from scrap import SEASONS, close_driver, get_match_logs, get_players, get_teams, get_upcoming_fixtures
 
 
 OUTPUT_CSV = Path("ekstraklasa_players.csv")
+FIXTURES_CSV = Path("ekstraklasa_fixtures.csv")
 KEY_COLUMNS = ["player_id", "match_id"]
 
 
@@ -50,6 +51,7 @@ def parse_args() -> tuple[bool, list[str]]:
 
 def main():
     all_data = []
+    upcoming_fixtures = []
     full_refresh, seasons_to_scrape = parse_args()
     refresh_scope = "full rebuild" if full_refresh else f"incremental refresh for {', '.join(seasons_to_scrape)}"
 
@@ -63,6 +65,10 @@ def main():
         for team_name, team_url in teams.items():
             print(f"\n{'─'*50}")
             print(f"Team: {team_name}")
+            fixtures = get_upcoming_fixtures(team_url, team_name)
+            if fixtures:
+                print(f"  {len(fixtures)} upcoming league fixtures found")
+                upcoming_fixtures.extend(fixtures)
             players = get_players(team_url)
             print(f"  {len(players)} players found")
 
@@ -81,6 +87,15 @@ def main():
         df = merge_player_rows(existing_df, all_data, seasons_to_scrape)
 
     df.to_csv(OUTPUT_CSV, index=False)
+    if upcoming_fixtures:
+        fixtures_df = (
+            pd.DataFrame(upcoming_fixtures)
+            .drop_duplicates(subset=["team", "date", "opponent", "venue"], keep="last")
+            .sort_values(by=["date", "team"])
+            .reset_index(drop=True)
+        )
+        fixtures_df.to_csv(FIXTURES_CSV, index=False)
+        print(f"Saved {len(fixtures_df)} upcoming fixtures to {FIXTURES_CSV}")
     print(f"\n✅ Done. {len(df)} rows saved to {OUTPUT_CSV}")
 
 if __name__ == "__main__":

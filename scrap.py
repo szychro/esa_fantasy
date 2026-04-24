@@ -125,6 +125,55 @@ def get_players(team_url: str) -> Dict[str, Dict[str, str]]:
     return players
 
 
+def get_upcoming_fixtures(team_url: str, team_name: str) -> List[Dict[str, str]]:
+    soup = expanded_soup(fetch(team_url))
+    fixtures: List[Dict[str, str]] = []
+
+    for table in soup.find_all("table"):
+        table_id = table.get("id", "")
+        if "matchlogs" not in table_id and "schedule" not in table_id:
+            continue
+
+        for tr in table.select("tbody tr[data-row]"):
+            classes = tr.get("class", [])
+            if "thead" in classes or "partial_table" in classes:
+                continue
+
+            def text_cell(stat: str) -> Optional[str]:
+                cell = tr.find(attrs={"data-stat": stat})
+                if cell is None:
+                    return None
+                link = cell.find("a")
+                text = link.get_text(strip=True) if link else cell.get_text(strip=True)
+                return text or None
+
+            date = text_cell("date")
+            competition = text_cell("comp")
+            opponent = text_cell("opponent")
+            venue = text_cell("venue")
+            result = text_cell("result")
+
+            if not date or competition != "Ekstraklasa" or not opponent or result:
+                continue
+
+            fixtures.append(
+                {
+                    "date": date,
+                    "competition": competition,
+                    "round": text_cell("round"),
+                    "day": text_cell("dayofweek"),
+                    "venue": venue,
+                    "team": team_name,
+                    "opponent": opponent,
+                }
+            )
+
+        if fixtures:
+            break
+
+    return fixtures
+
+
 def build_matchlog_url(player_id: str, player_slug: str, season: str) -> str:
     return f"{BASE}/en/players/{player_id}/matchlogs/{season}/{player_slug}-Match-Logs"
 

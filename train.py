@@ -1,43 +1,85 @@
+from pathlib import Path
+
+import joblib
+import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import mean_absolute_error
-import warnings
-warnings.filterwarnings("ignore")
+from sklearn.model_selection import GroupShuffleSplit
 
-POSITIONS = {"GK": [...], "DF": [...], "MF": [...], "FW": [...]}
 
-# Define features per position
-base_features = ["is_home", "minutes_roll5", "fantasy_points_roll3",
-                 "fantasy_points_roll5", "fantasy_points_roll10"]
+DATA_PATH = Path("ekstraklasa_players_prepped.csv")
+MODEL_PATH = Path("models.joblib")
 
-pos_features = {
-    "GK":  base_features + ["gk_saves_roll5", "gk_save_pct_roll5", "gk_goals_against_roll5"],
-    "DF":  base_features + ["goals_roll5", "assists_roll5", "xg_roll5"],
-    "MF":  base_features + ["goals_roll5", "assists_roll5", "shots_roll5", "xg_roll5"],
-    "FW":  base_features + ["goals_roll5", "shots_roll5", "xg_roll5", "assists_roll5"],
+BASE_FEATURES = [
+    "is_home",
+    "started_num_roll5",
+    "minutes_roll3",
+    "minutes_roll5",
+    "fantasy_points_roll3",
+    "fantasy_points_roll5",
+    "fantasy_points_roll10",
+    "opponent_goals_for_roll5",
+    "opponent_goals_against_roll5",
+    "opponent_clean_sheet_roll5",
+]
+
+POSITION_FEATURES = {
+    "GK": BASE_FEATURES + ["gk_saves_roll5", "gk_save_pct_roll5"],
+    "DF": BASE_FEATURES + ["goals_roll5", "assists_roll5", "xg_roll5"],
+    "MF": BASE_FEATURES + ["goals_roll5", "assists_roll5", "shots_roll5", "xg_roll5"],
+    "FW": BASE_FEATURES + ["goals_roll5", "shots_roll5", "xg_roll5", "assists_roll5"],
 }
 
-models = {}
 
-for pos, features in pos_features.items():
-    pos_df = df[df["position"] == pos].dropna(subset=features + ["fantasy_points"])
-    
-    X = pos_df[features]
-    y = pos_df["fantasy_points"]
-    groups = pos_df["player_id"]  # split by player, not random row
+def train_models(df: pd.DataFrame) -> dict[str, dict[str, object]]:
+    models: dict[str, dict[str, object]] = {}
 
-    # GroupShuffleSplit ensures a player is fully in train OR test
-    # This prevents data leakage from rolling features
-    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-    train_idx, test_idx = next(gss.split(X, y, groups))
+    for pos, features in POSITION_FEATURES.items():
+        pos_df = df.loc[df["position_fantasy"] == pos].copy()
+        pos_df = pos_df.dropna(subset=features + ["fantasy_points", "player_id"])
 
-    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+        if pos_df.empty:
+            print(f"{pos} -> skipped (no rows after filtering)")
+            continue
 
-    model = GradientBoostingRegressor(n_estimators=200, learning_rate=0.05,
-                                       max_depth=4, random_state=42)
-    model.fit(X_train, y_train)
-    
-    mae = mean_absolute_error(y_test, model.predict(X_test))
-    print(f"{pos} → MAE: {mae:.2f} pts")
-    models[pos] = (model, features)
+        if pos_df["player_id"].nunique() < 2:
+            print(f"{pos} -> skipped (not enough unique players for GroupShuffleSplit)")
+            continue
+
+        X = pos_df[features]
+        y = pos_df["fantasy_points"]
+        groups = pos_df["player_id"]
+
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        train_idx, test_idx = next(gss.split(X, y, groups))
+
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+        model = GradientBoostingRegressor(
+            n_estimators=300,
+            learning_rate=0.01,
+            max_depth=5,
+            random_state=42)
+        model.fit(X_train, y_train)
+
+        mae = mean_absolute_error(y_test, model.predict(X_test))
+        print(f"{pos} -> MAE: {mae:.2f} pts ({len(pos_df)} rows, {pos_df['player_id'].nunique()} players)")
+
+        models[pos] = {
+            "model": model,
+            "features": features,
+            "mae": mae,
+        }
+
+    return models
+
+
+def main() -> None:
+    df = pd.read_csv(DATA_PATH)
+    models = train_models(df)
+    joblib.dump(models, MODEL_PATH)
+    print(f"Saved {len(models)} model(s) to {MODEL_PATH}")
+
+
+if __name__ == "__main__":
+    main()
