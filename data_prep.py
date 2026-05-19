@@ -43,8 +43,9 @@ def fantasy_points_calc(df: pd.DataFrame) -> pd.Series:
     fpts += league_df["assists"].fillna(0) * league_df["position_fantasy"].map(assist_points).fillna(0)
     fpts += league_df["yellow_cards"].fillna(0) * league_df["position_fantasy"].map(yellow_card_points).fillna(0)
     fpts += league_df["red_cards"].fillna(0) * league_df["position_fantasy"].map(red_card_points).fillna(0)
-    if df["started"].isin(["Y", "Y*"]).any():
-        fpts += league_df["position_fantasy"].map(first_squad_points).fillna(0)
+    started_mask = league_df["started"].isin(["Y", "Y*"])
+    fpts += started_mask.astype(int) * league_df["position_fantasy"].map(first_squad_points).fillna(0)
+
 
     clean_sheet_mask = goals_against.eq(0)
     fpts += clean_sheet_mask.astype(int) * league_df["position_fantasy"].map(clean_sheet_points).fillna(0)

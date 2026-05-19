@@ -56,9 +56,12 @@ def train_models(df: pd.DataFrame) -> dict[str, dict[str, object]]:
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         model = GradientBoostingRegressor(
-            n_estimators=300,
-            learning_rate=0.01,
-            max_depth=5,
+            n_estimators=600,
+            learning_rate=0.1,
+            max_depth=2,
+            min_samples_leaf=25,
+            subsample=0.9,
+            loss="squared_error",
             random_state=42)
         model.fit(X_train, y_train)
 
