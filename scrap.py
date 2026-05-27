@@ -1,4 +1,5 @@
 import re
+import os
 import time
 from typing import Dict, List, Optional
 
@@ -9,7 +10,7 @@ import undetected_chromedriver as uc
 BASE = "https://fbref.com"
 SEASONS = ["2025-2026", "2024-2025", "2023-2024"]
 LEAGUE_URL = f"{BASE}/en/comps/36/Ekstraklasa-Stats"
-CHROME_VERSION_MAIN = 147
+CHROME_VERSION_ENV = "CHROME_VERSION_MAIN"
 
 _driver = None
 
@@ -20,7 +21,12 @@ def create_driver(headless: bool = False):
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    return uc.Chrome(options=options, headless=headless, version_main=CHROME_VERSION_MAIN)
+
+    chrome_version = os.getenv(CHROME_VERSION_ENV)
+    if chrome_version:
+        return uc.Chrome(options=options, headless=headless, version_main=int(chrome_version))
+
+    return uc.Chrome(options=options, headless=headless)
 
 
 def get_driver():

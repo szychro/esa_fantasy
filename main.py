@@ -1,8 +1,7 @@
 from pathlib import Path
-import sys
+import argparse
 
 import pandas as pd
-from scrap import SEASONS, close_driver, get_match_logs, get_players, get_teams, get_upcoming_fixtures
 
 
 OUTPUT_CSV = Path("ekstraklasa_players.csv")
@@ -40,19 +39,30 @@ def merge_player_rows(existing_df: pd.DataFrame, new_rows: list[dict], refresh_s
     return combined
 
 
-def parse_args() -> tuple[bool, list[str]]:
-    full_refresh = "--full-refresh" in sys.argv
-    if full_refresh or "--all-seasons" in sys.argv:
-        seasons = SEASONS
-    else:
-        seasons = [SEASONS[0]]
-    return full_refresh, seasons
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Scrape Ekstraklasa player match logs from FBref.")
+    parser.add_argument(
+        "--all-seasons",
+        action="store_true",
+        help="Refresh all configured seasons instead of only the current season.",
+    )
+    parser.add_argument(
+        "--full-refresh",
+        action="store_true",
+        help="Rebuild the player dataset from scratch for all configured seasons.",
+    )
+    return parser.parse_args()
 
 
 def main():
     all_data = []
     upcoming_fixtures = []
-    full_refresh, seasons_to_scrape = parse_args()
+    args = parse_args()
+
+    from scrap import SEASONS, close_driver, get_match_logs, get_players, get_teams, get_upcoming_fixtures
+
+    full_refresh = args.full_refresh
+    seasons_to_scrape = SEASONS if args.full_refresh or args.all_seasons else [SEASONS[0]]
     refresh_scope = "full rebuild" if full_refresh else f"incremental refresh for {', '.join(seasons_to_scrape)}"
 
     print(f"Mode: {refresh_scope}")
